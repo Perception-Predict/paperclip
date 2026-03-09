@@ -1,6 +1,6 @@
 FROM node:lts-trixie-slim AS base
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates curl git \
+  && apt-get install -y --no-install-recommends ca-certificates curl git gosu \
   && rm -rf /var/lib/apt/lists/*
 RUN corepack enable
 
@@ -35,8 +35,15 @@ WORKDIR /app
 COPY --from=build /app /app
 RUN npm install --global --omit=dev @anthropic-ai/claude-code@latest @openai/codex@latest opencode-ai
 
+# Prepare data dir and entrypoint; /app is owned by node so the server can
+# write temp files if needed.  The entrypoint (runs as root) will chown
+# /paperclip after the volume is mounted, then drop to the node user.
+RUN mkdir -p /paperclip && chown -R node:node /paperclip /app
+COPY docker/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
 ENV NODE_ENV=production \
-  HOME=/paperclip \
+  HOME=/home/node \
   HOST=0.0.0.0 \
   PORT=3100 \
   SERVE_UI=true \
@@ -48,4 +55,5 @@ ENV NODE_ENV=production \
 
 EXPOSE 3100
 
+ENTRYPOINT ["/entrypoint.sh"]
 CMD ["node", "--import", "./server/node_modules/tsx/dist/loader.mjs", "server/dist/index.js"]
